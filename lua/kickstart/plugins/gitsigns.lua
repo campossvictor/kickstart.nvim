@@ -4,6 +4,11 @@
 
 vim.pack.add { 'https://github.com/lewis6991/gitsigns.nvim' }
 
+-- Cores distintas para cada tipo de mudança
+vim.api.nvim_set_hl(0, 'GitSignsAdd', { fg = '#57c464' })    -- verde
+vim.api.nvim_set_hl(0, 'GitSignsChange', { fg = '#e5c07b' }) -- amarelo
+vim.api.nvim_set_hl(0, 'GitSignsDelete', { fg = '#e06c75' }) -- vermelho
+
 require('gitsigns').setup {
   on_attach = function(bufnr)
     local gitsigns = require 'gitsigns'
