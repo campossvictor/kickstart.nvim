@@ -92,6 +92,10 @@ do
   -- Enable faster startup by caching compiled Lua modules
   vim.loader.enable()
 
+  -- Use zsh interactively so aliases and functions from .zshrc are available
+  vim.o.shell = 'zsh'
+  vim.o.shellcmdflag = '-ic'
+
   -- Set <space> as the leader key
   -- See `:help mapleader`
   --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
@@ -110,7 +114,7 @@ do
   vim.o.number = true
   -- You can also add relative line numbers, to help with jumping.
   --  Experiment for yourself to see if you like it!
-  -- vim.o.relativenumber = true
+  vim.o.relativenumber = true
 
   -- Enable mouse mode, can be useful for resizing splits for example!
   vim.o.mouse = 'a'
@@ -204,6 +208,11 @@ do
   }
 
   vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
+
+  -- Buffer navigation
+  vim.keymap.set('n', '<S-h>', '<cmd>bprevious<CR>', { desc = 'Previous buffer' })
+  vim.keymap.set('n', '<S-l>', '<cmd>bnext<CR>', { desc = 'Next buffer' })
+  vim.keymap.set('n', '<leader>bd', function() require('mini.bufremove').delete() end, { desc = '[B]uffer [D]elete' })
 
   -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
   -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
@@ -347,21 +356,6 @@ do
   -- since otherwise the icons won't display properly.
   if vim.g.have_nerd_font then vim.pack.add { gh 'nvim-tree/nvim-web-devicons' } end
 
-  -- Here is a more advanced configuration example that passes options to `gitsigns.nvim`
-  --
-  -- See `:help gitsigns` to understand what each configuration key does.
-  -- Adds git related signs to the gutter, as well as utilities for managing changes
-  vim.pack.add { gh 'lewis6991/gitsigns.nvim' }
-  require('gitsigns').setup {
-    signs = {
-      add = { text = '+' }, ---@diagnostic disable-line: missing-fields
-      change = { text = '~' }, ---@diagnostic disable-line: missing-fields
-      delete = { text = '_' }, ---@diagnostic disable-line: missing-fields
-      topdelete = { text = '‾' }, ---@diagnostic disable-line: missing-fields
-      changedelete = { text = '~' }, ---@diagnostic disable-line: missing-fields
-    },
-  }
-
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
   require('which-key').setup {
@@ -417,6 +411,10 @@ do
       inside_next = 'ii',
     },
     n_lines = 500,
+    custom_textobjects = {
+      -- `a` = argument: dia, daa, cia, caa, via, vaa
+      a = require('mini.ai').gen_spec.argument(),
+    },
   }
 
   -- Add/delete/replace surroundings (brackets, quotes, etc.)
@@ -430,17 +428,158 @@ do
   --  You could remove this setup call if you don't like it,
   --  and try some other statusline plugin
   local statusline = require 'mini.statusline'
-  -- Set `use_icons` to true if you have a Nerd Font
-  statusline.setup { use_icons = vim.g.have_nerd_font }
 
-  -- You can configure sections in the statusline by overriding their
-  -- default behavior. For example, here we set the section for
-  -- cursor location to LINE:COLUMN
-  ---@diagnostic disable-next-line: duplicate-set-field
-  statusline.section_location = function() return '%2l:%-2v' end
+  local function section_mode()
+    local mode, hl = statusline.section_mode { trunc_width = 120 }
+    return mode, hl
+  end
+
+  local function section_git()
+    local head = vim.b.gitsigns_head
+    if not head or head == '' then return '' end
+    local signs = vim.b.gitsigns_status_dict or {}
+    local added   = signs.added   or 0
+    local changed = signs.changed or 0
+    local removed = signs.removed or 0
+    local result = ' ' .. head
+    if added   > 0 then result = result .. ' %#GitSignsAdd#+' .. added .. '%*' end
+    if changed > 0 then result = result .. ' %#GitSignsChange#~' .. changed .. '%*' end
+    if removed > 0 then result = result .. ' %#GitSignsDelete#-' .. removed .. '%*' end
+    return result
+  end
+
+  local function section_diagnostics()
+    local errors   = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.ERROR })
+    local warnings = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.WARN })
+    if errors == 0 and warnings == 0 then return '' end
+    local result = ''
+    if errors   > 0 then result = result .. '%#DiagnosticError#E:' .. errors .. '%* ' end
+    if warnings > 0 then result = result .. '%#DiagnosticWarn#W:' .. warnings .. '%*' end
+    return result
+  end
+
+  local function section_debug()
+    local ok, dap = pcall(require, 'dap')
+    if ok and dap.session() then return ' [DEBUG] ' end
+    return ''
+  end
+
+  statusline.setup {
+    use_icons = vim.g.have_nerd_font,
+    content = {
+      active = function()
+        local mode, mode_hl = section_mode()
+        local git           = section_git()
+        local diag          = section_diagnostics()
+        local dbg           = section_debug()
+        local location      = '%2l:%-2v'
+        return statusline.combine_groups {
+          { hl = mode_hl,              strings = { mode } },
+          { hl = 'MiniStatuslineDevinfo', strings = { git } },
+          '%<', -- truncate point
+          { hl = 'MiniStatuslineFilename', strings = { dbg } },
+          '%=', -- right align
+          { hl = 'MiniStatuslineDevinfo', strings = { diag } },
+          { hl = 'MiniStatuslineFileinfo', strings = {} },
+          { hl = mode_hl,              strings = { location } },
+        }
+      end,
+    },
+  }
+
+  require('mini.pairs').setup {
+    mappings = {
+      -- Brackets: só fecha automaticamente quando seguido de espaço, newline ou fechamento
+      ['('] = { action = 'open', pair = '()', neigh_pattern = '[^\\][%s%)\n]' },
+      ['['] = { action = 'open', pair = '[]', neigh_pattern = '[^\\][%s%]\n]' },
+      ['{'] = { action = 'open', pair = '{}', neigh_pattern = '[^\\][%s%}\n]' },
+      [')'] = { action = 'close', pair = '()', neigh_pattern = '[^\\].' },
+      [']'] = { action = 'close', pair = '[]', neigh_pattern = '[^\\].' },
+      ['}'] = { action = 'close', pair = '{}', neigh_pattern = '[^\\].' },
+      -- Aspas: pula o fechamento se já estiver antes dele
+      ['"'] = { action = 'closeopen', pair = '""', neigh_pattern = '[^\\].' },
+      ["'"] = { action = 'closeopen', pair = "''", neigh_pattern = '[^%a\\].' },
+      ['`'] = { action = 'closeopen', pair = '``', neigh_pattern = '[^\\].' },
+    },
+  }
+
+  -- Pular qualquer fechamento com <C-l> no modo insert
+  vim.keymap.set('i', '<C-l>', function()
+    local col = vim.api.nvim_win_get_cursor(0)[2]
+    local next_char = vim.api.nvim_get_current_line():sub(col + 1, col + 1)
+    if next_char:match('[%)%]%}\'"`]') then
+      vim.api.nvim_win_set_cursor(0, { vim.api.nvim_win_get_cursor(0)[1], col + 1 })
+    end
+  end, { desc = 'Jump past closing pair' })
+  require('mini.comment').setup()
+  require('mini.bufremove').setup()
 
   -- ... and there is more!
   --  Check out: https://github.com/nvim-mini/mini.nvim
+end
+
+-- ============================================================
+-- SECTION 3.0: SMOOTH SCROLLING
+-- ============================================================
+do
+  vim.pack.add { gh 'karb94/neoscroll.nvim' }
+  require('neoscroll').setup {
+    mappings = { '<C-u>', '<C-d>', '<C-b>', '<C-f>', 'zt', 'zz', 'zb' },
+    hide_cursor = false,
+    stop_eof = true,
+    easing = 'sine',
+  }
+end
+
+-- ============================================================
+-- SECTION 3.1: BUFFERLINE
+-- Visual tab bar for open buffers
+-- ============================================================
+do
+  vim.pack.add { gh 'akinsho/bufferline.nvim' }
+  require('bufferline').setup {
+    options = {
+      separator_style = 'slant',
+      show_buffer_close_icons = false,
+      show_close_icon = false,
+    },
+  }
+end
+
+-- ============================================================
+-- SECTION 3.2: WINDOW PICKER
+-- Quickly jump to any open window with a letter label
+-- ============================================================
+do
+  vim.pack.add { gh 's1n7ax/nvim-window-picker' }
+  require('window-picker').setup {
+    hint = 'floating-big-letter',
+    filter_rules = {
+      include_current_win = false,
+      autoselect_one = true,
+      bo = {
+        filetype = { 'neo-tree', 'neo-tree-popup', 'notify' },
+        buftype = { 'terminal', 'quickfix' },
+      },
+    },
+  }
+
+  vim.keymap.set('n', '<leader>w', function()
+    local win = require('window-picker').pick_window()
+    if win then vim.api.nvim_set_current_win(win) end
+  end, { desc = 'Pick [W]indow' })
+end
+
+-- ============================================================
+-- SECTION 3.5: NAVIGATION / JUMP
+-- flash.nvim for fast cursor jumping
+-- ============================================================
+do
+  vim.pack.add { gh 'folke/flash.nvim' }
+  require('flash').setup {}
+
+  vim.keymap.set({ 'n', 'x', 'o' }, 's', function() require('flash').jump() end, { desc = 'Flash Jump' })
+  vim.keymap.set({ 'n', 'x', 'o' }, 'S', function() require('flash').treesitter() end, { desc = 'Flash Treesitter' })
 end
 
 -- ============================================================
@@ -526,6 +665,7 @@ do
 
       -- Find references for the word under your cursor.
       vim.keymap.set('n', 'grr', builtin.lsp_references, { buffer = buf, desc = '[G]oto [R]eferences' })
+      vim.keymap.set('n', '<leader>gr', builtin.lsp_references, { buffer = buf, desc = '[G]oto [R]eferences' })
 
       -- Jump to the implementation of the word under your cursor.
       -- Useful when your language has ways of declaring types without an actual implementation.
@@ -535,6 +675,7 @@ do
       -- This is where a variable was first declared, or where a function is defined, etc.
       -- To jump back, press <C-t>.
       vim.keymap.set('n', 'grd', builtin.lsp_definitions, { buffer = buf, desc = '[G]oto [D]efinition' })
+      vim.keymap.set('n', '<F12>', builtin.lsp_definitions, { buffer = buf, desc = '[G]oto [D]efinition' })
 
       -- Fuzzy find all the symbols in your current document.
       -- Symbols are things like variables, functions, types, etc.
@@ -688,7 +829,7 @@ do
   local servers = {
     -- clangd = {},
     -- gopls = {},
-    -- pyright = {},
+    pyright = {},
     -- rust_analyzer = {},
     --
     -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -753,7 +894,10 @@ do
   -- You can press `g?` for help in this menu.
   local ensure_installed = vim.tbl_keys(servers or {})
   vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
+    'black',
+    'isort',
+    'debugpy',
+    'ruff',
   })
 
   require('mason-tool-installer').setup { ensure_installed = ensure_installed }
@@ -792,7 +936,7 @@ do
     formatters_by_ft = {
       -- rust = { 'rustfmt' },
       -- Conform can also run multiple formatters sequentially
-      -- python = { "isort", "black" },
+      python = { 'isort', 'black' },
       --
       -- You can use 'stop_after_first' to run the first available formatter from the list
       -- javascript = { "prettierd", "prettier", stop_after_first = true },
@@ -846,7 +990,7 @@ do
       -- <c-k>: Toggle signature help
       --
       -- See `:help blink-cmp-config-keymap` for defining your own keymap
-      preset = 'default',
+      preset = 'enter',
 
       -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
       --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
@@ -960,12 +1104,12 @@ do
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
-  -- require 'kickstart.plugins.debug'
+  require 'kickstart.plugins.debug'
   -- require 'kickstart.plugins.indent_line'
-  -- require 'kickstart.plugins.lint'
+  require 'kickstart.plugins.lint'
   -- require 'kickstart.plugins.autopairs'
-  -- require 'kickstart.plugins.neo-tree'
-  -- require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+  require 'kickstart.plugins.neo-tree'
+  require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
