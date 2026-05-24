@@ -11,3 +11,5 @@ vim.keymap.set('n', '<C-h>', function() navigate('h') end, { desc = 'Navigate le
 vim.keymap.set('n', '<C-j>', function() navigate('j') end, { desc = 'Navigate down (nvim/tmux)' })
 vim.keymap.set('n', '<C-k>', function() navigate('k') end, { desc = 'Navigate up (nvim/tmux)' })
 vim.keymap.set('n', '<C-l>', function() navigate('l') end, { desc = 'Navigate right (nvim/tmux)' })
+
+return {}

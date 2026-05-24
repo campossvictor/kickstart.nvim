@@ -232,18 +232,6 @@ do
   --  Use CTRL+<hjkl> to switch between windows
   --
   --  See `:help wincmd` for a list of all window commands
-  local function tmux_navigate(dir)
-    local cur_win = vim.fn.winnr()
-    vim.cmd('wincmd ' .. dir)
-    if cur_win == vim.fn.winnr() and vim.env.TMUX then
-      local tmux_dir = { h = 'L', j = 'D', k = 'U', l = 'R' }
-      vim.fn.system('tmux select-pane -' .. tmux_dir[dir])
-    end
-  end
-  vim.keymap.set('n', '<C-h>', function() tmux_navigate('h') end, { desc = 'Navigate left (nvim/tmux)' })
-  vim.keymap.set('n', '<C-j>', function() tmux_navigate('j') end, { desc = 'Navigate down (nvim/tmux)' })
-  vim.keymap.set('n', '<C-k>', function() tmux_navigate('k') end, { desc = 'Navigate up (nvim/tmux)' })
-  vim.keymap.set('n', '<C-l>', function() tmux_navigate('l') end, { desc = 'Navigate right (nvim/tmux)' })
 
   -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
   -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
