@@ -232,10 +232,18 @@ do
   --  Use CTRL+<hjkl> to switch between windows
   --
   --  See `:help wincmd` for a list of all window commands
-  vim.keymap.set('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
-  vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
-  vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
-  vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
+  local function tmux_navigate(dir)
+    local cur_win = vim.fn.winnr()
+    vim.cmd('wincmd ' .. dir)
+    if cur_win == vim.fn.winnr() and vim.env.TMUX then
+      local tmux_dir = { h = 'L', j = 'D', k = 'U', l = 'R' }
+      vim.fn.system('tmux select-pane -' .. tmux_dir[dir])
+    end
+  end
+  vim.keymap.set('n', '<C-h>', function() tmux_navigate('h') end, { desc = 'Navigate left (nvim/tmux)' })
+  vim.keymap.set('n', '<C-j>', function() tmux_navigate('j') end, { desc = 'Navigate down (nvim/tmux)' })
+  vim.keymap.set('n', '<C-k>', function() tmux_navigate('k') end, { desc = 'Navigate up (nvim/tmux)' })
+  vim.keymap.set('n', '<C-l>', function() tmux_navigate('l') end, { desc = 'Navigate right (nvim/tmux)' })
 
   -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
   -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
@@ -407,13 +415,14 @@ do
   require('mini.ai').setup {
     -- NOTE: Avoid conflicts with the built-in incremental selection mappings on Neovim>=0.12 (see `:help treesitter-incremental-selection`)
     mappings = {
-      around_next = 'aa',
-      inside_next = 'ii',
+      around_next = '',
+      inside_next = '',
     },
     n_lines = 500,
     custom_textobjects = {
-      -- `a` = argument: dia, daa, cia, caa, via, vaa
       a = require('mini.ai').gen_spec.argument(),
+      f = require('mini.ai').gen_spec.treesitter({ a = '@function.outer', i = '@function.inner' }),
+      c = require('mini.ai').gen_spec.treesitter({ a = '@class.outer',    i = '@class.inner' }),
     },
   }
 
@@ -1040,6 +1049,26 @@ do
 
   -- NOTE: You can also specify a branch or a specific commit
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
+  vim.pack.add { gh 'nvim-treesitter/nvim-treesitter-textobjects' }
+
+  require('nvim-treesitter-textobjects').setup {
+    move = {
+      enable = true,
+      goto_next_start     = { [']m'] = '@function.outer' },
+      goto_previous_start = { ['[m'] = '@function.outer' },
+    },
+  }
+
+  -- Incremental selection: <C-space> inicia/expande, <C-s> encolhe
+  vim.keymap.set('n', '<C-space>', function()
+    vim.treesitter.incremental_selection.start_selection()
+  end, { desc = 'Treesitter: init selection' })
+  vim.keymap.set('x', '<C-space>', function()
+    vim.treesitter.incremental_selection.expand_selection()
+  end, { desc = 'Treesitter: expand selection' })
+  vim.keymap.set('x', '<C-s>', function()
+    vim.treesitter.incremental_selection.shrink_selection()
+  end, { desc = 'Treesitter: shrink selection' })
 
   -- Ensure basic parsers are installed
   local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
@@ -1111,6 +1140,23 @@ do
   require 'kickstart.plugins.neo-tree'
   require 'kickstart.plugins.neotest'
   require 'kickstart.plugins.gitsigns' -- adds gitsigns recommended keymaps
+
+  -- Remap Caps Lock → Escape only while Neovim is active (X11 only)
+  if vim.fn.executable 'setxkbmap' == 1 and (vim.env.DISPLAY or '') ~= '' then
+    local caps_grp = vim.api.nvim_create_augroup('CapsLockEscape', { clear = true })
+    vim.api.nvim_create_autocmd({ 'VimEnter', 'FocusGained' }, {
+      group = caps_grp,
+      callback = function()
+        vim.fn.system 'setxkbmap -option caps:escape'
+      end,
+    })
+    vim.api.nvim_create_autocmd({ 'VimLeave', 'FocusLost' }, {
+      group = caps_grp,
+      callback = function()
+        vim.fn.system 'setxkbmap -option ""'
+      end,
+    })
+  end
 
   -- NOTE: You can add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --
